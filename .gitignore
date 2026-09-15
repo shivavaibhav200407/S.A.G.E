@@ -1,29 +1,34 @@
-# Python bytecode & cache
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
 
 # Virtual environments
 .venv/
 venv/
 env/
-ENV/
 
-# Local environment variables & secrets
+# Environment variables / API keys
 .env
+.env.*
 
-# Database & Runtime State
+# Databases
 *.sqlite3
+*.db
+
+# SAGE runtime data
 chroma_db/
 conversation_memory.json
+user_profile.json
 
-# Logs & Temporary Files
+# Logs
 *.log
-*.tmp
-.zip
+logs/
 
-# IDE & Editor Settings
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
 .vscode/
 .idea/
-*.swp
-*.swo
