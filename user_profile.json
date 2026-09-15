@@ -1,0 +1,21 @@
+{
+    "user_name": "Vaibhav",
+    "target_topic": "Evaluation, Guardrails & Self-Correction",
+    "skill_level": 5,
+    "preferred_style": "Practical & Code-First",
+    "current_state": "QUIZZING",
+    "weak_topics": [
+        "Retrieval-Augmented Generation (RAG)"
+    ],
+    "completed_modules": [
+        "Python Basics & Syntax",
+        "Data Structures (Lists, Dicts, Sets)",
+        "Embeddings & Vector Spaces",
+        "Retrieval-Augmented Generation (RAG)",
+        "Document Chunking & Preprocessing",
+        "Vector Databases & ANN Search",
+        "Agentic AI & Tool Calling",
+        "Evaluation, Guardrails & Self-Correction"
+    ],
+    "prerequisite_gaps": []
+}

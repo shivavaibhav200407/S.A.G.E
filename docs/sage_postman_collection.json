@@ -1,0 +1,224 @@
+{
+  "info": {
+    "name": "SAGE Learning Engine API (v1.0)",
+    "_postman_id": "sage-v1-collection",
+    "description": "Complete collection of REST API requests for SAGE Self-Adaptive Learning Engine.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Auth & Profile",
+      "item": [
+        {
+          "name": "Signup / Register",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"student_alex\",\n  \"password\": \"Password123!\",\n  \"target_topic\": \"Java Collections & ArrayList\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/signup/", "host": ["{{base_url}}"], "path": ["signup", ""]}
+          }
+        },
+        {
+          "name": "Login (Get JWT Access Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.access) {",
+                  "    pm.collectionVariables.set('access_token', jsonData.access);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"student_alex\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/token/", "host": ["{{base_url}}"], "path": ["token", ""]}
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url}}/profile/", "host": ["{{base_url}}"], "path": ["profile", ""]}
+          }
+        },
+        {
+          "name": "Update Profile / Change Course Track",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_topic\": \"Java Collections & ArrayList\",\n  \"skill_level\": \"2\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/profile/", "host": ["{{base_url}}"], "path": ["profile", ""]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Autonomous Learning Loop",
+      "item": [
+        {
+          "name": "Get Learning State & Progress",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url}}/loop/", "host": ["{{base_url}}"], "path": ["loop", ""]}
+          }
+        },
+        {
+          "name": "Action: Teach (Generate Adaptive Lesson)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"teach\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/loop/", "host": ["{{base_url}}"], "path": ["loop", ""]}
+          }
+        },
+        {
+          "name": "Action: Quiz (Generate Concept-Tagged Assessment)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"quiz\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/loop/", "host": ["{{base_url}}"], "path": ["loop", ""]}
+          }
+        },
+        {
+          "name": "Action: Evaluate & Advance Topic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"evaluate\",\n  \"input\": \"1. ArrayList grows by 50% dynamically.\\n2. String pool caches immutable literals.\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/loop/", "host": ["{{base_url}}"], "path": ["loop", ""]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Chat Tutor & History",
+      "item": [
+        {
+          "name": "Ask SAGE Tutor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Explain Java String Pool with a simple example.\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/chat/", "host": ["{{base_url}}"], "path": ["chat", ""]}
+          }
+        },
+        {
+          "name": "Get Chat History",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url}}/chat/", "host": ["{{base_url}}"], "path": ["chat", ""]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Knowledge Vault (RAG) & Multi-Agent Trace",
+      "item": [
+        {
+          "name": "Ingest Notes into Vector DB",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"ingest\",\n  \"text\": \"Java ArrayList expands capacity by 50%.\",\n  \"source\": \"StudyNotes.pdf\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/rag/", "host": ["{{base_url}}"], "path": ["rag", ""]}
+          }
+        },
+        {
+          "name": "Search Vector Knowledge Base",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"search\",\n  \"query\": \"How does ArrayList grow?\",\n  \"top_k\": 3\n}"
+            },
+            "url": {"raw": "{{base_url}}/rag/", "host": ["{{base_url}}"], "path": ["rag", ""]}
+          }
+        },
+        {
+          "name": "Multi-Agent Trace (Supervisor, RAG, Web, Tutor, Verifier)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{access_token}}"},
+              {"key": "Content-Type", "value": "application/json"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What is Python asyncio event loop? Search official docs.\"\n}"
+            },
+            "url": {"raw": "{{base_url}}/trace/", "host": ["{{base_url}}"], "path": ["trace", ""]}
+          }
+        }
+      ]
+    }
+  ]
+}

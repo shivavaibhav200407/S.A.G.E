@@ -1,0 +1,29 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment variables & secrets
+.env
+
+# Database & Runtime State
+*.sqlite3
+chroma_db/
+conversation_memory.json
+
+# Logs & Temporary Files
+*.log
+*.tmp
+.zip
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
