@@ -12,3 +12,4 @@ pydantic>=2.0.0
 dj-database-url>=2.1.0
 gunicorn>=21.0.0
 streamlit>=1.30.0
+langchain-text-splitters>=0.1.0
