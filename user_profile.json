@@ -5,7 +5,11 @@
     "preferred_style": "Practical & Code-First",
     "current_state": "QUIZZING",
     "weak_topics": [
-        "Retrieval-Augmented Generation (RAG)"
+        "Retrieval-Augmented Generation (RAG)",
+        "LLM Evaluation Metrics",
+        "Evaluation, Guardrails & Self-Correction",
+        "Java Basics & Primitive Types",
+        "Exceptions & Try-With-Resources"
     ],
     "completed_modules": [
         "Python Basics & Syntax",

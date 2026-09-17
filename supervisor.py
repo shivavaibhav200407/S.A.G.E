@@ -419,15 +419,17 @@ def route_user_request(
     agent_trace.append({"agent": "Tutor Agent", "action": "Generating grounded, adaptive explanation"})
     response = call_llm(prompt=full_prompt, system_prompt=system_prompt, max_tokens=650)
 
-    # Verification with Verifier Agent
-    combined_context = f"{rag_context}\n\n{research_block}"
-    agent_trace.append({"agent": "Verifier Agent", "action": "Checking factual groundedness and syntax"})
-    verification = verify_explanation(
-        explanation=response,
-        context=combined_context,
-        domain=domain,
-        external_citations=research_citations
-    )
+    # Verification with Verifier Agent only when metadata is requested (e.g. /api/trace/)
+    verification = None
+    if return_metadata:
+        combined_context = f"{rag_context}\n\n{research_block}"
+        agent_trace.append({"agent": "Verifier Agent", "action": "Checking factual groundedness and syntax"})
+        verification = verify_explanation(
+            explanation=response,
+            context=combined_context,
+            domain=domain,
+            external_citations=research_citations
+        )
 
     # Record to conversation memory
     append_to_memory("student", user_msg)
@@ -450,17 +452,34 @@ def supervise_learning_session(user_msg: str, profile_data: Optional[Dict[str, A
     """Provides complete multi-agent traceability for a learning interaction."""
     return route_user_request(user_msg, profile_data=profile_data, return_metadata=True, **kwargs)
 
-def handle_diagnostic(topic: str = "", skill_level: Optional[int] = None) -> str:
-    """Generates a domain-grounded diagnostic assessment for the specified topic."""
-    return generate_diagnostic_quiz(topic=topic, skill_level=skill_level)
+def handle_diagnostic(
+    topic: str = "",
+    skill_level: Optional[int] = None,
+    quiz_type: str = "diagnostic",
+    doc_name: Optional[str] = None
+) -> Union[str, Dict[str, Any]]:
+    """Generates a domain-grounded or PDF-grounded diagnostic/mastery assessment."""
+    if doc_name:
+        from pdf_diagnostic import generate_pdf_diagnostic_assessment
+        return generate_pdf_diagnostic_assessment(doc_name, topic)
+    return generate_diagnostic_quiz(
+        topic=topic,
+        skill_level=skill_level,
+        quiz_type=quiz_type,
+        doc_name=doc_name
+    )
 
 def handle_curriculum(topic: str, score: int, diagnostic_output: str = ""):
     """Generates an adaptive curriculum lesson reflecting diagnostic score."""
     return generate_curriculum_lesson(topic, score, diagnostic_output)
 
-def handle_evaluation(answers: Any) -> Dict[str, Any]:
-    """Evaluates student answers with deterministic concept-level attribution."""
-    result = run_evaluator_agent(str(answers))
+def handle_evaluation(
+    answers: Any,
+    quiz_type: str = "diagnostic",
+    topic: Optional[str] = None
+) -> Dict[str, Any]:
+    """Evaluates student answers with deterministic concept-level attribution and dual-quiz gating."""
+    result = run_evaluator_agent(str(answers), quiz_type=quiz_type, topic=topic)
     if hasattr(result, "model_dump"):
         return result.model_dump()
     return dict(result)

@@ -1,3 +1,4 @@
+import time
 import traceback
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -41,10 +42,15 @@ class SageRegisterView(APIView):
                 profile.target_topic = target_topic
                 profile.save()
 
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(user)
+
             return Response({
                 'message': f"Account created successfully for {username}!",
                 'username': username,
-                'target_topic': profile.target_topic
+                'target_topic': profile.target_topic,
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
             traceback.print_exc()
@@ -106,6 +112,8 @@ class SageChatView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/chat/ started")
         try:
             msg = request.data.get('message', '')
             if not msg:
@@ -135,10 +143,16 @@ class SageChatView(APIView):
                 ai_response=response
             )
 
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/chat/ completed in {elapsed:.2f}s")
             return Response({
                 'response': response,
                 'ai_response': response
             }, status=status.HTTP_200_OK)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/chat/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'AI generation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -150,11 +164,23 @@ class SageProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        t0 = time.time()
+        print("[PERF] GET /api/profile/ started")
         try:
             profile, _ = StudentProfile.objects.get_or_create(user=request.user)
             serializer = StudentProfileSerializer(profile)
             data = dict(serializer.data)
             data['username'] = request.user.username
+            try:
+                numeric_level = int(profile.skill_level) if profile.skill_level else 1
+            except (ValueError, TypeError):
+                numeric_level = 1
+            data['level'] = numeric_level
+            data['skill_level'] = numeric_level
+            data['current_topic'] = profile.target_topic or 'Python Basics & Syntax'
+            data['target_topic'] = profile.target_topic or 'Python Basics & Syntax'
+            elapsed = time.time() - t0
+            print(f"[PERF] GET /api/profile/ completed in {elapsed:.3f}s")
             return Response(data, status=status.HTTP_200_OK)
         except Exception as e:
             traceback.print_exc()
@@ -181,22 +207,81 @@ class DiagnosticView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/diagnostic/ started")
         try:
             topic = request.data.get('topic', 'Java Basics & Primitive Types')
             skill_level = request.data.get('skill_level')
+            quiz_type = request.data.get('quiz_type', 'diagnostic')
+            doc_name = request.data.get('doc_name')
             if skill_level is not None:
                 try:
                     skill_level = int(skill_level)
                 except Exception:
                     skill_level = None
-            quiz = handle_diagnostic(topic, skill_level=skill_level)
-            if hasattr(quiz, 'model_dump'):
-                quiz = quiz.model_dump()
+
+            quiz = handle_diagnostic(topic, skill_level=skill_level, quiz_type=quiz_type, doc_name=doc_name)
+            quiz_dict = {}
+            if isinstance(quiz, dict):
+                quiz_dict = quiz
+            elif hasattr(quiz, 'model_dump'):
+                quiz_dict = quiz.model_dump()
             elif hasattr(quiz, 'dict'):
-                quiz = quiz.dict()
-            elif hasattr(quiz, '__dict__'):
-                quiz = quiz.__dict__
-            return Response({'quiz': quiz}, status=status.HTTP_200_OK)
+                quiz_dict = quiz.dict()
+            elif isinstance(quiz, str):
+                import re
+                parsed_questions = []
+                blocks = re.split(r'\n(?=(?:\d+[\.\)]|\[Concept:))', quiz.strip())
+                for idx, b in enumerate(blocks):
+                    b = b.strip()
+                    if not b:
+                        continue
+                    lines = b.split('\n')
+                    q_lines = []
+                    options = []
+                    concept_tag = ""
+                    for line in lines:
+                        line_s = line.strip()
+                        c_match = re.search(r'\[Concept:\s*([^\]]+)\]', line_s, re.IGNORECASE)
+                        if c_match:
+                            concept_tag = c_match.group(1).strip()
+                            continue
+                        opt_match = re.match(r'^[A-Da-d][\)\.\:]\s*(.+)$', line_s)
+                        if opt_match:
+                            options.append(opt_match.group(1).strip())
+                        else:
+                            q_lines.append(line)
+
+                    q_text = '\n'.join(q_lines).strip()
+                    q_text = re.sub(r'^\d+[\.\)]\s*', '', q_text).strip()
+
+                    parsed_questions.append({
+                        'id': idx + 1,
+                        'question': q_text,
+                        'options': options,
+                        'concept': concept_tag or topic
+                    })
+                quiz_dict = {
+                    'topic': topic,
+                    'raw_text': quiz,
+                    'questions': parsed_questions,
+                    'quiz_type': quiz_type,
+                    'doc_name': doc_name
+                }
+            else:
+                quiz_dict = {'topic': topic, 'raw_text': str(quiz), 'questions': [], 'quiz_type': quiz_type}
+
+            quiz_dict['quiz_type'] = quiz_dict.get('quiz_type', quiz_type)
+            if doc_name:
+                quiz_dict['doc_name'] = doc_name
+
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/diagnostic/ completed in {elapsed:.2f}s")
+            return Response({'quiz': quiz_dict}, status=status.HTTP_200_OK)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/diagnostic/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'AI generation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -208,6 +293,8 @@ class CurriculumView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/curriculum/ started")
         try:
             topic = request.data.get('topic', 'Java Basics & Primitive Types')
             score = request.data.get('score', 0)
@@ -218,7 +305,13 @@ class CurriculumView(APIView):
                 plan = plan.dict()
             elif hasattr(plan, '__dict__'):
                 plan = plan.__dict__
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/curriculum/ completed in {elapsed:.2f}s")
             return Response({'plan': plan, 'curriculum_plan': plan}, status=status.HTTP_200_OK)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/curriculum/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'AI generation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -230,9 +323,13 @@ class EvaluationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/evaluate/ started")
         try:
             answers = request.data.get('answers', '')
-            results = handle_evaluation(answers)
+            quiz_type = request.data.get('quiz_type', 'diagnostic')
+            topic = request.data.get('topic') or request.data.get('target_topic')
+            results = handle_evaluation(answers, quiz_type=quiz_type, topic=topic)
             if hasattr(results, 'model_dump'):
                 results = results.model_dump()
             elif hasattr(results, 'dict'):
@@ -240,18 +337,56 @@ class EvaluationView(APIView):
             elif hasattr(results, '__dict__'):
                 results = results.__dict__
 
-            # Format normalized response
             score_val = results.get('score_out_of_3', results.get('score', 0))
             passed_val = results.get('passed', score_val >= 2)
             
-            # Sync to student profile
+            # Sync to student profile with progression gating
             profile, _ = StudentProfile.objects.get_or_create(user=request.user)
-            if passed_val:
-                current_lvl = int(profile.skill_level) if str(profile.skill_level).isdigit() else 1
-                profile.skill_level = str(min(current_lvl + 1, 5))
-            
-            if 'detected_weak_topics' in results and results['detected_weak_topics']:
-                profile.set_weak_topics(results['detected_weak_topics'])
+            try:
+                current_lvl = int(profile.skill_level) if profile.skill_level else 1
+            except (ValueError, TypeError):
+                current_lvl = 1
+
+            completed_list = profile.get_completed_modules()
+            weak_list = profile.get_weak_topics()
+            active_topic_name = topic or profile.target_topic
+
+            next_topic_recommendation = None
+            if quiz_type.lower() == 'mastery':
+                if passed_val:
+                    # Mark module as completed
+                    if active_topic_name and active_topic_name not in completed_list:
+                        completed_list.append(active_topic_name)
+                        profile.set_completed_modules(completed_list)
+                    # Clear from weak topics
+                    if active_topic_name in weak_list:
+                        weak_list = [w for w in weak_list if w != active_topic_name]
+                        profile.set_weak_topics(weak_list)
+                    # Advance skill level
+                    current_lvl = min(current_lvl + 1, 5)
+                    profile.skill_level = str(current_lvl)
+
+                    # Calculate next topic in Knowledge Graph
+                    from knowledge_graph import get_next_topic, detect_domain
+                    dom = detect_domain(active_topic_name)
+                    next_node = get_next_topic(completed_list, current_topic=active_topic_name, domain=dom)
+                    if next_node and 'title' in next_node:
+                        next_topic_recommendation = next_node['title']
+                else:
+                    # Record newly detected weak topics
+                    new_weak = results.get('detected_weak_topics', [])
+                    for nw in new_weak:
+                        if nw not in weak_list:
+                            weak_list.append(nw)
+                    profile.set_weak_topics(weak_list)
+            else:
+                # Pre-assessment Diagnostic: record weak spots without modifying skill level
+                new_weak = results.get('detected_weak_topics', [])
+                for nw in new_weak:
+                    if nw not in weak_list:
+                        weak_list.append(nw)
+                profile.set_weak_topics(weak_list)
+
             profile.save()
 
             response_payload = {
@@ -259,14 +394,24 @@ class EvaluationView(APIView):
                 'score_out_of_3': score_val,
                 'total_questions': 3,
                 'passed': passed_val,
+                'quiz_type': quiz_type,
                 'tutor_feedback': results.get('feedback', ''),
                 'feedback': results.get('feedback', ''),
                 'detected_weaknesses': results.get('detected_weak_topics', []),
                 'detected_weak_topics': results.get('detected_weak_topics', []),
-                'recommended_skill_level': int(profile.skill_level),
+                'recommended_skill_level': current_lvl,
+                'next_level': current_lvl,
+                'next_topic': next_topic_recommendation,
+                'completed_modules': profile.get_completed_modules(),
                 'results': results
             }
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/evaluate/ completed in {elapsed:.2f}s")
             return Response(response_payload, status=status.HTTP_200_OK)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/evaluate/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'AI generation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -278,6 +423,8 @@ class LearningLoopView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        t0 = time.time()
+        print("[PERF] GET /api/loop/ started")
         try:
             from supervisor import step_learning_cycle
             profile, _ = StudentProfile.objects.get_or_create(user=request.user)
@@ -288,12 +435,16 @@ class LearningLoopView(APIView):
                 'weak_topics': profile.get_weak_topics(),
             }
             res = step_learning_cycle(action="status", profile_data=profile_data)
+            elapsed = time.time() - t0
+            print(f"[PERF] GET /api/loop/ completed in {elapsed:.3f}s")
             return Response(res, status=status.HTTP_200_OK)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/loop/ started")
         try:
             from supervisor import step_learning_cycle
             action = request.data.get('action', 'next')
@@ -331,25 +482,45 @@ class LearningLoopView(APIView):
                     profile.set_weak_topics(res['weak_topics'])
                 profile.save()
 
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/loop/ completed in {elapsed:.2f}s")
             return Response(res, status=status.HTTP_200_OK)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/loop/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'AI generation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# 7. Courses & Catalog View
+# 7. Courses & Catalog View (Cached in-memory for instant <5ms responses)
+_COURSES_CACHE = None
+
 class SageCoursesView(APIView):
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        t0 = time.time()
+        print("[PERF] GET /api/courses/ started")
         try:
-            from knowledge_graph import DOMAIN_META, DOMAIN_TRACKS
-            from btech_courses import BTECH_BRANCHES
-            return Response({
-                'courses': DOMAIN_META,
-                'tracks': DOMAIN_TRACKS,
-                'branches': BTECH_BRANCHES
-            }, status=status.HTTP_200_OK)
+            global _COURSES_CACHE
+            if _COURSES_CACHE is None:
+                from knowledge_graph import DOMAIN_META, DOMAIN_TRACKS
+                from btech_courses import BTECH_BRANCHES
+                courses_list = [
+                    {"id": k, **v} for k, v in DOMAIN_META.items()
+                ]
+                _COURSES_CACHE = {
+                    'courses': DOMAIN_META,
+                    'courses_list': courses_list,
+                    'tracks': DOMAIN_TRACKS,
+                    'branches': BTECH_BRANCHES
+                }
+            elapsed = time.time() - t0
+            print(f"[PERF] GET /api/courses/ completed in {elapsed:.3f}s")
+            return Response(_COURSES_CACHE, status=status.HTTP_200_OK)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -362,14 +533,20 @@ class SageRAGView(APIView):
 
     def get(self, request):
         """List all ingested documents in the Knowledge Base."""
+        t0 = time.time()
+        print("[PERF] GET /api/rag/ started")
         try:
             documents = rag_db.list_documents()
+            elapsed = time.time() - t0
+            print(f"[PERF] GET /api/rag/ completed in {elapsed:.3f}s")
             return Response({'documents': documents, 'count': len(documents)}, status=status.HTTP_200_OK)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request):
+        t0 = time.time()
+        print("[PERF] POST /api/rag/ started")
         try:
             # Handle multipart PDF file upload
             if 'file' in request.FILES:
@@ -384,6 +561,8 @@ class SageRAGView(APIView):
                     content = uploaded_file.read().decode('utf-8', errors='ignore')
                     chunks_count = rag_db.ingest_text(content, source_name=filename)
 
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (upload '{filename}') completed in {elapsed:.2f}s")
                 return Response({
                     'status': 'success',
                     'filename': filename,
@@ -397,6 +576,8 @@ class SageRAGView(APIView):
                 query = request.data.get('query', '')
                 top_k = int(request.data.get('top_k', 3))
                 hits = search_knowledge_base(query, top_k=top_k)
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (search) completed in {elapsed:.3f}s")
                 return Response({'results': hits}, status=status.HTTP_200_OK)
             
             elif action == 'ingest':
@@ -405,6 +586,8 @@ class SageRAGView(APIView):
                 if not text:
                     return Response({'error': 'No text provided for ingestion'}, status=status.HTTP_400_BAD_REQUEST)
                 count = rag_db.ingest_text(text, source_name=source)
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (ingest) completed in {elapsed:.3f}s")
                 return Response({
                     'status': 'success',
                     'source': source,
@@ -414,6 +597,8 @@ class SageRAGView(APIView):
 
             elif action == 'list_documents':
                 docs = rag_db.list_documents()
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (list_documents) completed in {elapsed:.3f}s")
                 return Response({'documents': docs, 'count': len(docs)}, status=status.HTTP_200_OK)
 
             elif action == 'delete_document':
@@ -421,14 +606,30 @@ class SageRAGView(APIView):
                 if not doc_name:
                     return Response({'error': 'doc_name is required for deletion'}, status=status.HTTP_400_BAD_REQUEST)
                 deleted_count = rag_db.delete_document(doc_name)
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (delete_document) completed in {elapsed:.3f}s")
                 return Response({
                     'status': 'success',
                     'doc_name': doc_name,
                     'deleted_chunks': deleted_count,
                     'message': f"Removed '{doc_name}' ({deleted_count} chunks) from knowledge base."
                 }, status=status.HTTP_200_OK)
+
+            elif action == 'align_diagnostic':
+                doc_name = request.data.get('doc_name', '')
+                if not doc_name:
+                    return Response({'error': 'doc_name is required for alignment'}, status=status.HTTP_400_BAD_REQUEST)
+                from pdf_diagnostic import align_document_with_knowledge_graph
+                alignment = align_document_with_knowledge_graph(doc_name)
+                elapsed = time.time() - t0
+                print(f"[PERF] POST /api/rag/ (align_diagnostic) completed in {elapsed:.3f}s")
+                return Response({'alignment': alignment}, status=status.HTTP_200_OK)
             
             return Response({'error': f"Unknown action '{action}'"}, status=status.HTTP_400_BAD_REQUEST)
+        except TimeoutError as te:
+            elapsed = time.time() - t0
+            print(f"[PERF] POST /api/rag/ timed out after {elapsed:.2f}s: {te}")
+            return Response({'error': 'Operation timed out. Please try again.'}, status=status.HTTP_504_GATEWAY_TIMEOUT)
         except Exception as e:
             traceback.print_exc()
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
