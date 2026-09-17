@@ -210,10 +210,18 @@ class DiagnosticView(APIView):
         t0 = time.time()
         print("[PERF] POST /api/diagnostic/ started")
         try:
-            topic = request.data.get('topic', 'Java Basics & Primitive Types')
+            raw_topic = request.data.get('topic')
             skill_level = request.data.get('skill_level')
             quiz_type = request.data.get('quiz_type', 'diagnostic')
             doc_name = request.data.get('doc_name')
+            
+            # If doc_name is supplied and topic is not provided or is generic default, pass topic=None so PDF alignment chooses
+            generic_topics = {'java basics & primitive types', 'general engineering', ''}
+            if doc_name and (not raw_topic or raw_topic.strip().lower() in generic_topics):
+                topic = None
+            else:
+                topic = raw_topic or 'Java Basics & Primitive Types'
+
             if skill_level is not None:
                 try:
                     skill_level = int(skill_level)
@@ -259,21 +267,23 @@ class DiagnosticView(APIView):
                         'id': idx + 1,
                         'question': q_text,
                         'options': options,
-                        'concept': concept_tag or topic
+                        'concept': concept_tag or (topic or 'Diagnostic')
                     })
                 quiz_dict = {
-                    'topic': topic,
+                    'topic': topic or 'Diagnostic Assessment',
                     'raw_text': quiz,
                     'questions': parsed_questions,
                     'quiz_type': quiz_type,
                     'doc_name': doc_name
                 }
             else:
-                quiz_dict = {'topic': topic, 'raw_text': str(quiz), 'questions': [], 'quiz_type': quiz_type}
+                quiz_dict = {'topic': topic or 'Diagnostic Assessment', 'raw_text': str(quiz), 'questions': [], 'quiz_type': quiz_type}
 
             quiz_dict['quiz_type'] = quiz_dict.get('quiz_type', quiz_type)
             if doc_name:
                 quiz_dict['doc_name'] = doc_name
+            if 'primary_topic' in quiz_dict:
+                quiz_dict['topic'] = quiz_dict['primary_topic']
 
             elapsed = time.time() - t0
             print(f"[PERF] POST /api/diagnostic/ completed in {elapsed:.2f}s")
@@ -561,12 +571,23 @@ class SageRAGView(APIView):
                     content = uploaded_file.read().decode('utf-8', errors='ignore')
                     chunks_count = rag_db.ingest_text(content, source_name=filename)
 
+                if chunks_count == 0:
+                    return Response({
+                        'error': f"Could not extract readable text from '{filename}'. The file may be empty or contain scanned images without digital text. Please upload a PDF with selectable text, or notes in TXT/MD format.",
+                        'chunks_ingested': 0
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                # Pre-calculate Knowledge Graph alignment for immediate rich frontend feedback
+                from pdf_diagnostic import align_document_with_knowledge_graph
+                alignment = align_document_with_knowledge_graph(filename)
+
                 elapsed = time.time() - t0
                 print(f"[PERF] POST /api/rag/ (upload '{filename}') completed in {elapsed:.2f}s")
                 return Response({
                     'status': 'success',
                     'filename': filename,
                     'chunks_ingested': chunks_count,
+                    'alignment': alignment,
                     'message': f"Successfully indexed {chunks_count} semantic chunk(s) from '{filename}' into ChromaDB!"
                 }, status=status.HTTP_200_OK)
 

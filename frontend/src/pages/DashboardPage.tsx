@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, BookOpen, CheckCircle, FileText, TrendingUp, Flame, Award, Lightbulb, Play } from 'lucide-react';
+import {
+  Sparkles,
+  ArrowRight,
+  BookOpen,
+  CheckCircle,
+  FileText,
+  TrendingUp,
+  Flame,
+  Award,
+  Lightbulb,
+  Play,
+  Shuffle,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { ProgressBar } from '../components/ui/ProgressBar';
+import { CourseSelectModal } from '../components/courses/CourseSelectModal';
 
 interface DashboardPageProps {
   onNavigate: (page: string, initialPrompt?: string) => void;
@@ -12,6 +25,7 @@ interface DashboardPageProps {
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const { user, profile, activeCourse } = useAuth();
   const [quickQuery, setQuickQuery] = useState('');
+  const [courseModalOpen, setCourseModalOpen] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -74,14 +88,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
       <Card glow="accent" className="relative overflow-hidden border-indigo-500/30 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <span className="text-xs uppercase font-semibold tracking-wider text-indigo-400">
-              Continue Active Track
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase font-semibold tracking-wider text-indigo-400">
+                Continue Active Track
+              </span>
+              <button
+                onClick={() => setCourseModalOpen(true)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-500/40 text-[10px] font-medium text-indigo-300 hover:text-white hover:bg-indigo-900 transition-colors shadow-sm"
+                title="Switch Engineering Course"
+              >
+                <Shuffle className="w-2.5 h-2.5 text-indigo-400" />
+                <span>Switch Course</span>
+              </button>
+            </div>
             <h2 className="text-xl font-bold text-white tracking-tight">
               {currentTopic}
             </h2>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Domain: {activeCourse}. Next milestone: Advanced implementations & algorithmic complexities.
+              Track: <strong className="text-slate-200">{activeCourse}</strong> • Next milestone: Advanced implementations & algorithmic complexities.
             </p>
             <div className="pt-2 w-full max-w-md">
               <ProgressBar value={progressPercent} label="Milestone Progress" color="accent" />
@@ -231,9 +255,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
               </div>
               <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
             </button>
+
+            <button
+              onClick={() => setCourseModalOpen(true)}
+              className="w-full text-left p-3 rounded-xl bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-500/30 hover:border-indigo-500/60 transition-all flex items-center justify-between text-xs text-indigo-200"
+            >
+              <div className="flex items-center gap-2.5">
+                <BookOpen className="w-4 h-4 text-indigo-400" />
+                <span>Switch / Browse 25+ Tracks</span>
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
+            </button>
           </div>
         </Card>
       </div>
+
+      {/* Course Select Modal */}
+      <CourseSelectModal
+        isOpen={courseModalOpen}
+        onClose={() => setCourseModalOpen(false)}
+      />
     </div>
   );
 };

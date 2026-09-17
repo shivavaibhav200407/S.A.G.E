@@ -57,31 +57,35 @@ export const QuizPage: React.FC<QuizPageProps> = ({
     try {
       const res = await quizService.generateQuiz(target, profile?.skill_level || 1, activeType, activeDoc);
       setMetaInfo(res.meta);
+      const effectiveTopic = res.meta?.primary_topic || res.meta?.topic || target;
+      if (effectiveTopic && effectiveTopic !== topic) {
+        setTopic(effectiveTopic);
+      }
       if (res.questions && res.questions.length > 0) {
         setQuestions(res.questions);
       } else {
         setQuestions([
           {
             id: 1,
-            question: `What is the fundamental architectural principle of ${target}?`,
+            question: `What is the fundamental architectural principle of ${effectiveTopic}?`,
             options: ['Encapsulation & modularity', 'Global variable mutability', 'Unbounded recursion', 'Linear scan without caching'],
-            concept: target,
+            concept: effectiveTopic,
           },
           {
             id: 2,
             question: `Which data representation yields optimal worst-case search complexity?`,
             options: ['Unsorted linked array', 'Self-balancing binary tree (O(log n))', 'Linear probe table without rehash', 'FIFO Queue'],
-            concept: target,
+            concept: effectiveTopic,
           },
           {
             id: 3,
-            question: `How are edge cases handled safely in ${target}?`,
+            question: `How are edge cases handled safely in ${effectiveTopic}?`,
             options: ['Ignoring boundary errors', 'Explicit validation & exception catching', 'Silent process termination', 'Random state allocation'],
-            concept: target,
+            concept: effectiveTopic,
           },
         ]);
       }
-      showToast(`Loaded ${activeType === 'mastery' ? 'mastery' : 'diagnostic'} assessment for ${target}`, 'info');
+      showToast(`Loaded ${activeType === 'mastery' ? 'mastery' : 'diagnostic'} assessment for ${effectiveTopic}`, 'info');
     } catch (err: any) {
       const isTimeout = err.status === 504 || err.message?.includes('timed out');
       const msg = isTimeout ? 'AI generation timed out. Please try again.' : (err.message || 'Failed to generate quiz from backend.');
@@ -93,14 +97,14 @@ export const QuizPage: React.FC<QuizPageProps> = ({
   }, [topic, quizType, docName, profile?.skill_level, showToast]);
 
   useEffect(() => {
-    const target = initialTopic || profile?.target_topic || 'Java Basics & Primitive Types';
+    const target = initialTopic || (initialDocName ? '' : profile?.target_topic) || 'Java Basics & Primitive Types';
     const type = initialQuizType || 'diagnostic';
     const dName = initialDocName;
     const loadKey = `${target}_${type}_${dName || ''}`;
 
     if (lastLoadKeyRef.current !== loadKey) {
       lastLoadKeyRef.current = loadKey;
-      setTopic(target);
+      setTopic(target || (dName ? `Aligning with ${dName}...` : 'Diagnostic Assessment'));
       setQuizType(type);
       setDocName(dName);
       loadQuiz(target, type, dName);
@@ -469,7 +473,7 @@ export const QuizPage: React.FC<QuizPageProps> = ({
                       >
                         {String.fromCharCode(65 + optIdx)}
                       </span>
-                      <span className="leading-relaxed">{opt}</span>
+                      <span className="leading-relaxed">{opt.replace(/^[A-Da-d][\)\.\:]\s*/, '')}</span>
                     </div>
                     {isSelected && <Check className="w-4 h-4 text-indigo-400 shrink-0 ml-2" />}
                   </button>

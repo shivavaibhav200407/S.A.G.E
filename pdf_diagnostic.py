@@ -121,7 +121,8 @@ def align_document_with_knowledge_graph(doc_name: str) -> Dict[str, Any]:
 def parse_quiz_markdown(raw_quiz: str, fallback_topic: str) -> List[Dict[str, Any]]:
     """Converts numbered quiz text with options into structured JSON question list."""
     parsed_questions = []
-    blocks = re.split(r'\n(?=(?:\d+[\.\)]|\[Concept:))', raw_quiz.strip())
+    # Split on question numbers e.g. "1.", "1)", "### 1.", "**1.**", "Question 1:", "## Question 1"
+    blocks = re.split(r'\n(?=(?:#{1,4}\s*)?(?:\*\*)?(?:Question\s*)?\d+[\.\):]|\[Concept:)', raw_quiz.strip(), flags=re.IGNORECASE)
     
     for idx, b in enumerate(blocks):
         b = b.strip()
@@ -134,56 +135,68 @@ def parse_quiz_markdown(raw_quiz: str, fallback_topic: str) -> List[Dict[str, An
 
         for line in lines:
             line_s = line.strip()
+            if not line_s:
+                continue
+
+            # Check for concept tag: [Concept: ...], **Concept:** ..., Concept: ...
             concept_match = re.search(r'\[Concept:\s*([^\]]+)\]', line_s, re.IGNORECASE)
+            if not concept_match:
+                concept_match = re.search(r'(?:\*\*Concept:\*\*|Concept:)\s*([^\n\*]+)', line_s, re.IGNORECASE)
             if concept_match:
                 concept_tag = concept_match.group(1).strip()
                 continue
             
-            opt_match = re.match(r'^[A-Da-d][\)\.\:]\s*(.+)$', line_s)
+            # Check for option prefix: A), B), C), D), - A), * A), **A)**, (A), etc.
+            opt_match = re.match(r'^(?:[\-\*•]\s*)?(?:\*\*)?(?:\()?([A-Da-d])[\)\.\:](?:\))?(?:\*\*)?\s*(.+)$', line_s)
             if opt_match:
-                options.append(opt_match.group(1).strip())
+                cleaned_opt = opt_match.group(2).strip()
+                cleaned_opt = re.sub(r'^\*\*(.*?)\*\*$', r'\1', cleaned_opt).strip()
+                options.append(cleaned_opt)
             else:
-                q_lines.append(line)
+                # Filter out pure markdown headings or question number labels
+                cleaned_line = re.sub(r'^(?:#{1,4}\s*)?(?:\*\*)?(?:Question\s*)?\d+[\.\):]\s*(?:\*\*)?', '', line_s).strip()
+                if cleaned_line:
+                    q_lines.append(cleaned_line)
 
-        q_text = '\n'.join(q_lines).strip()
-        q_text = re.sub(r'^\d+[\.\)]\s*', '', q_text).strip()
+        q_text = ' '.join(q_lines).strip()
+        q_text = re.sub(r'^(?:Question\s*)?\d+[\.\):]\s*', '', q_text, flags=re.IGNORECASE).strip()
 
         if q_text and len(options) >= 2:
             parsed_questions.append({
                 "id": len(parsed_questions) + 1,
                 "question": q_text,
-                "options": options,
+                "options": options[:4],
                 "concept": concept_tag or fallback_topic
             })
 
-    # If parsing produced fewer than 2 questions, fallback to standard parsing
+    # If parsing produced fewer than 2 questions, fallback to domain-adaptive questions
     if len(parsed_questions) < 2:
         parsed_questions = [
             {
                 "id": 1,
-                "question": f"Based on '{fallback_topic}', what is the primary architectural concept highlighted?",
+                "question": f"Based on '{fallback_topic}', what is the primary architectural concept highlighted in the document?",
                 "options": [
-                    "Structured modular decomposition",
-                    "Unbounded linear scanning",
-                    "Ignoring state boundaries",
-                    "Arbitrary runtime allocation"
+                    "Structured modular decomposition & invariant enforcement",
+                    "Unbounded linear scanning without indexing",
+                    "Ignoring state boundaries and isolation",
+                    "Arbitrary unmanaged runtime allocation"
                 ],
                 "concept": fallback_topic
             },
             {
                 "id": 2,
-                "question": f"Which guarantee is critical when implementing solutions in {fallback_topic}?",
+                "question": f"Which design principle is critical when implementing solutions in {fallback_topic}?",
                 "options": [
-                    "Deterministic state verification & error handling",
+                    "Deterministic state verification & defensive error handling",
                     "Asynchronous suppression without logging",
-                    "Unchecked recursive recursion",
-                    "Global variable mutability"
+                    "Unchecked recursive invocation without base conditions",
+                    "Global shared variable mutability"
                 ],
                 "concept": fallback_topic
             },
             {
                 "id": 3,
-                "question": f"How does the Knowledge Graph structure prerequisites for {fallback_topic}?",
+                "question": f"How does the engineering curriculum structure prerequisites for {fallback_topic}?",
                 "options": [
                     "Hierarchical competency progression with dependency validation",
                     "Random non-linear jump scheduling",
@@ -203,18 +216,32 @@ def generate_pdf_diagnostic_assessment(doc_name: str, topic: Optional[str] = Non
     Extracts chunks from ChromaDB, aligns with Knowledge Graph, and generates
     concept-tagged multiple-choice diagnostic questions grounded directly in the document.
     """
-    cache_key = (doc_name.lower().strip(), (topic or "").lower().strip())
+    alignment = align_document_with_knowledge_graph(doc_name)
+    aligned_topics = alignment.get("aligned_topics", [])
+
+    # Determine authentic primary topic:
+    # If topic is not provided, or is empty, or is the generic default 'Java Basics & Primitive Types',
+    # or does not match the detected domain when aligned topics exist:
+    generic_defaults = {"java basics & primitive types", "general engineering", ""}
+    clean_topic = (topic or "").strip()
+
+    if (not clean_topic or 
+        clean_topic.lower() in generic_defaults or 
+        (aligned_topics and clean_topic not in aligned_topics and alignment["domain"] != detect_domain(clean_topic))):
+        primary_topic = aligned_topics[0] if aligned_topics else doc_name
+    else:
+        primary_topic = clean_topic
+
+    cache_key = (doc_name.lower().strip(), primary_topic.lower().strip())
     now = time.time()
 
     if cache_key in _PDF_DIAGNOSTIC_CACHE:
         cached_time, cached_data = _PDF_DIAGNOSTIC_CACHE[cache_key]
         if now - cached_time < _CACHE_TTL_SECONDS:
-            print(f"[PERF] Serving cached PDF diagnostic for document '{doc_name}'")
+            print(f"[PERF] Serving cached PDF diagnostic for document '{doc_name}' ({primary_topic})")
             return cached_data
 
-    alignment = align_document_with_knowledge_graph(doc_name)
-    primary_topic = topic or (alignment["aligned_topics"][0] if alignment["aligned_topics"] else doc_name)
-    subconcepts_str = ", ".join(alignment["aligned_topics"]) if alignment["aligned_topics"] else primary_topic
+    subconcepts_str = ", ".join(aligned_topics) if aligned_topics else primary_topic
 
     system_prompt = (
         "You are the SAGE PDF Diagnostic Assessment Agent.\n"

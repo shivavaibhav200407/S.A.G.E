@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Zap,
   Award,
-  CheckCircle2
+  CheckCircle2,
+  Shuffle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -19,10 +20,135 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { SubjectAnimation } from '../components/animations/SubjectAnimation';
+import { CourseSelectModal } from '../components/courses/CourseSelectModal';
 
 interface LearnPageProps {
   onNavigateToQuiz: (topic?: string, quizType?: 'diagnostic' | 'mastery') => void;
   onNavigateToChat: (prompt?: string) => void;
+}
+
+// Well-known course alias dictionary for 100% resilient course resolution
+const COURSE_ALIASES: Record<string, string> = {
+  'cs201': 'dsa',
+  'cs202': 'java',
+  'cs203': 'dbms',
+  'cs301': 'os',
+  'cs302': 'cn',
+  'ai301': 'ml',
+  'cs304': 'web_tech',
+  'ec201': 'digital_logic',
+  'me201': 'thermodynamics',
+  'c++': 'cpp',
+  'cpp': 'cpp',
+  'dld': 'digital_logic',
+  'som': 'eng_mechanics',
+  'beee': 'beee',
+  'digital electronics': 'digital_logic',
+  'full stack web development': 'web_tech',
+  'machine learning foundations': 'ml',
+  'object oriented programming in java': 'java',
+  'strength of materials': 'eng_mechanics',
+  'c programming': 'c_programming',
+  'engineering mathematics': 'eng_math_1',
+  'engineering physics': 'eng_physics',
+  'basic electrical': 'beee',
+  'circuits': 'circuits_eee',
+  'signals': 'signals_systems',
+  'fluid': 'fluid_mechanics',
+  'microprocessor': 'microprocessors',
+  'compiler': 'toc_compiler',
+  'theory of computation': 'toc_compiler',
+};
+
+function normalizeCourseText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function resolveTrackKey(term: string, data: any): string | null {
+  if (!term || !data?.tracks) return null;
+  const rawLower = term.toLowerCase().trim();
+  const norm = normalizeCourseText(term);
+
+  // 1. Direct key match in data.tracks
+  if (data.tracks[rawLower]) return rawLower;
+
+  // 2. Check well-known aliases
+  for (const [alias, key] of Object.entries(COURSE_ALIASES)) {
+    if (
+      alias === rawLower ||
+      rawLower.includes(alias) ||
+      alias.includes(rawLower) ||
+      norm === normalizeCourseText(alias) ||
+      norm.includes(normalizeCourseText(alias))
+    ) {
+      if (data.tracks[key]) return key;
+    }
+  }
+
+  // 3. Match against courses metadata (data.courses)
+  if (data.courses) {
+    const courseEntries: Array<[string, any]> = Array.isArray(data.courses)
+      ? data.courses.map((c: any, idx: number) => [c?.id || c?.key || String(idx), c])
+      : Object.entries(data.courses);
+
+    for (const [cKey, cMeta] of courseEntries) {
+      if (cKey.toLowerCase() === rawLower && data.tracks[cKey]) return cKey;
+      const metaName = (cMeta?.name || cMeta?.title || '').toLowerCase();
+      const normMeta = normalizeCourseText(metaName);
+      if (metaName === rawLower || normMeta === norm) {
+        if (data.tracks[cKey]) return cKey;
+      }
+      if (norm && normMeta && (normMeta.includes(norm) || norm.includes(normMeta))) {
+        if (data.tracks[cKey]) return cKey;
+      }
+    }
+
+    // 4. Token overlap matching
+    const stopWords = new Set(['and', '&', 'in', 'of', 'for', 'the', 'a', 'an', 'to', '1', '2']);
+    const termTokens = new Set(norm.split(' ').filter((w) => w && !stopWords.has(w)));
+    if (termTokens.size > 0) {
+      let bestKey: string | null = null;
+      let bestOverlap = 0;
+      for (const [cKey, cMeta] of courseEntries) {
+        const metaTokens = new Set(
+          normalizeCourseText(cMeta?.name || '').split(' ').filter((w) => w && !stopWords.has(w))
+        );
+        let overlap = 0;
+        for (const token of termTokens) {
+          if (metaTokens.has(token)) overlap++;
+        }
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestKey = cKey;
+        }
+      }
+      if (bestKey && bestOverlap >= 1 && data.tracks[bestKey]) {
+        return bestKey;
+      }
+    }
+  }
+
+  // 5. Match against topic titles inside tracks
+  for (const [tKey, trackNodes] of Object.entries(data.tracks)) {
+    if (trackNodes && typeof trackNodes === 'object') {
+      const nodes = Array.isArray(trackNodes) ? trackNodes : Object.values(trackNodes);
+      for (const node of nodes as any[]) {
+        const title = (node?.title || node?.name || '').toLowerCase();
+        if (title && (title === rawLower || title.includes(rawLower) || rawLower.includes(title))) {
+          return tKey;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -46,7 +172,7 @@ function extractTopicsList(
       .filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
   }
 
-  // 2. If data has direct 'available_topics' or 'topics' array
+  // 2. Direct topics array
   if (Array.isArray(data.available_topics)) {
     return data.available_topics
       .map((item: any) => (typeof item === 'string' ? item : item?.title || item?.name || ''))
@@ -58,101 +184,51 @@ function extractTopicsList(
       .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
   }
 
-  // 3. If data has 'tracks' dictionary (standard SAGE backend structure)
+  // 3. Tracks dictionary with robust resolution
   if (data.tracks && typeof data.tracks === 'object' && !Array.isArray(data.tracks)) {
-    const searchTerms = [
-      activeCourseName?.toLowerCase(),
-      currentTarget?.toLowerCase(),
-    ].filter(Boolean) as string[];
+    let matchedKey: string | null = null;
 
-    let matchedTrackData: any = null;
-
-    // A. Match track via courses metadata (supports both object dict and array of courses)
-    if (data.courses) {
-      const courseEntries: Array<[string, any]> = Array.isArray(data.courses)
-        ? (data.courses as any[]).map((c, idx) => [c?.id || c?.key || c?.slug || c?.track || String(idx), c])
-        : Object.entries(data.courses);
-
-      for (const [cKey, cMeta] of courseEntries) {
-        const cName = (cMeta?.name || cMeta?.title || '').toLowerCase();
-        for (const term of searchTerms) {
-          if (term && (cName.includes(term) || term.includes(cName) || cKey.toLowerCase() === term)) {
-            if (data.tracks && data.tracks[cKey]) {
-              matchedTrackData = data.tracks[cKey];
-              break;
-            }
-          }
-        }
-        if (matchedTrackData) break;
-      }
+    // Prioritize active course name
+    if (activeCourseName) {
+      matchedKey = resolveTrackKey(activeCourseName, data);
     }
-
-    // B. Match track key directly
-    if (!matchedTrackData) {
-      for (const tKey of Object.keys(data.tracks)) {
-        const tKeyLower = tKey.toLowerCase();
-        for (const term of searchTerms) {
-          if (term && (term.includes(tKeyLower) || tKeyLower.includes(term))) {
-            matchedTrackData = data.tracks[tKey];
-            break;
-          }
-        }
-        if (matchedTrackData) break;
-      }
+    // Fallback to student current target
+    if (!matchedKey && currentTarget) {
+      matchedKey = resolveTrackKey(currentTarget, data);
     }
-
-    // C. Fallback: Check for common tracks
-    if (!matchedTrackData) {
-      const preferred = ['dsa', 'java', 'python', 'rag_ai', 'javascript', 'cpp'];
+    // Fallback to first available track in tracks dict
+    if (!matchedKey) {
+      const preferred = ['dsa', 'os', 'dbms', 'cn', 'java', 'python', 'rag_ai'];
       for (const pref of preferred) {
         if (data.tracks[pref]) {
-          matchedTrackData = data.tracks[pref];
+          matchedKey = pref;
           break;
         }
       }
+      if (!matchedKey && Object.keys(data.tracks).length > 0) {
+        matchedKey = Object.keys(data.tracks)[0];
+      }
     }
 
-    // D. Fallback: First track in tracks dictionary
-    if (!matchedTrackData && Object.values(data.tracks).length > 0) {
-      matchedTrackData = Object.values(data.tracks)[0];
-    }
-
-    if (matchedTrackData) {
-      // If the matched track is an array
-      if (Array.isArray(matchedTrackData)) {
-        return matchedTrackData
+    if (matchedKey && data.tracks[matchedKey]) {
+      const trackData = data.tracks[matchedKey];
+      if (Array.isArray(trackData)) {
+        return trackData
           .map((item: any) => (typeof item === 'string' ? item : item?.title || item?.name || ''))
           .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
       }
-      // If the matched track is a dictionary of topic nodes (e.g. { java_basics: { title: '...', order: 1 } })
-      if (typeof matchedTrackData === 'object') {
-        const entries = Object.entries(matchedTrackData) as [string, any][];
+      if (typeof trackData === 'object') {
+        const entries = Object.entries(trackData) as [string, any][];
         entries.sort((a, b) => {
           const orderA = typeof a[1]?.order === 'number' ? a[1].order : 999;
           const orderB = typeof b[1]?.order === 'number' ? b[1].order : 999;
           return orderA - orderB;
         });
-        const extracted = entries
+        return entries
           .map(([key, val]) => {
             if (typeof val === 'string') return val;
             return val?.title || val?.name || key;
           })
-          .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
-
-        if (extracted.length > 0) {
-          return extracted;
-        }
-      }
-    }
-  }
-
-  // 4. If data has 'courses' dictionary with 'topics'
-  if (data.courses) {
-    const courseList = Array.isArray(data.courses) ? data.courses : Object.values(data.courses);
-    for (const cMeta of courseList as any[]) {
-      if (Array.isArray(cMeta?.topics)) {
-        return cMeta.topics
-          .map((item: any) => (typeof item === 'string' ? item : item?.title || item?.name || ''))
           .filter((t: string) => typeof t === 'string' && t.trim().length > 0);
       }
     }
@@ -165,11 +241,22 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigateToQuiz, onNaviga
   const { profile, activeCourse } = useAuth();
   const { showToast } = useToast();
 
+  const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [coursesData, setCoursesData] = useState<learningService.CoursesResponse | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<string>('');
   const [lessonContent, setLessonContent] = useState<string>('');
   const [generatingLesson, setGeneratingLesson] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Clear stale lesson and re-align selected topic when active course switches
+  const prevCourseRef = useRef(activeCourse);
+  useEffect(() => {
+    if (prevCourseRef.current !== activeCourse) {
+      prevCourseRef.current = activeCourse;
+      setLessonContent('');
+      setSelectedTopic('');
+    }
+  }, [activeCourse]);
 
   // Safely extract topics list - guaranteed to always be an array
   const availableTopics = React.useMemo(() => {
@@ -316,9 +403,21 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigateToQuiz, onNaviga
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white font-mono">
               Adaptive Learning Path
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Track: <strong className="text-slate-200">{activeCourse}</strong> • Mastery: <strong className="text-emerald-400">{masteredCount}/{availableTopics.length} Modules</strong> • Student Tier: <strong className="text-indigo-400">Level {skillLevel}</strong>
-            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
+              <span>Track: <strong className="text-slate-200">{activeCourse}</strong></span>
+              <button
+                onClick={() => setCourseModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-500/40 text-[11px] font-medium text-indigo-300 hover:text-white hover:bg-indigo-900 transition-all shadow-sm"
+                title="Switch Engineering Course Track"
+              >
+                <Shuffle className="w-3 h-3 text-indigo-400" />
+                <span>Switch Track</span>
+              </button>
+              <span className="hidden sm:inline">•</span>
+              <span>Mastery: <strong className="text-emerald-400">{masteredCount}/{availableTopics.length} Modules</strong></span>
+              <span className="hidden sm:inline">•</span>
+              <span>Tier: <strong className="text-indigo-400">Level {skillLevel}</strong></span>
+            </div>
           </div>
         </div>
 
@@ -598,6 +697,15 @@ export const LearnPage: React.FC<LearnPageProps> = ({ onNavigateToQuiz, onNaviga
           </Card>
         </div>
       </div>
+
+      {/* Course Select Modal */}
+      <CourseSelectModal
+        isOpen={courseModalOpen}
+        onClose={() => setCourseModalOpen(false)}
+        onSelectCourse={() => {
+          setLessonContent('');
+        }}
+      />
     </div>
   );
 };

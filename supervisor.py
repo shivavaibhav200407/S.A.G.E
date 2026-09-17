@@ -359,13 +359,26 @@ def route_user_request(
             "Cite the source document where relevant. If the notes do not contain the answer, "
             "clarify what was found in the vault and supplement with accurate engineering fundamentals."
         )
+        agent_trace.append({"agent": "Tutor Agent", "action": "Synthesizing pedagogical explanation grounded in retrieved document excerpts"})
         system_p = "You are SAGE Knowledge Vault Assistant. Provide accurate explanations with clear source citations."
         response = call_llm(prompt=prompt, system_prompt=system_p, max_tokens=650)
+
+        # Groundedness verification with Verifier Agent
+        verification = None
+        if return_metadata:
+            agent_trace.append({"agent": "Verifier Agent", "action": "Validating factual alignment with uploaded document context"})
+            verification = verify_explanation(
+                explanation=response,
+                context=rag_context,
+                domain=domain
+            )
+
         append_to_memory("student", user_msg)
         append_to_memory("sage", response)
         return {
             "response": response,
             "ai_response": response,
+            "verification": verification,
             "domain": domain,
             "rag_context": rag_context,
             "agent_trace": agent_trace

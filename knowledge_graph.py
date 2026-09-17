@@ -418,6 +418,14 @@ def detect_domain(query_or_topic: str) -> str:
         return "python"
     q = query_or_topic.lower().strip()
 
+    # 0. Exact or substring match against DOMAIN_META keys or names
+    for dom, meta in DOMAIN_META.items():
+        if q == dom:
+            return dom
+        meta_name = (meta.get("name") or "").lower()
+        if q == meta_name or q in meta_name or meta_name in q:
+            return dom
+
     # 1. Exact or substring match in any domain track
     for dom, track in DOMAIN_TRACKS.items():
         if q == dom:

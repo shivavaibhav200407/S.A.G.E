@@ -9,7 +9,7 @@ interface AuthContextType {
   user: User | null;
   profile: StudentProfile | null;
   activeCourse: string;
-  setActiveCourse: (course: string) => void;
+  setActiveCourse: (course: string, defaultTopic?: string) => void;
   login: (username: string, password?: string) => Promise<void>;
   demoLogin: () => Promise<void>;
   register: (payload: authService.RegisterPayload) => Promise<void>;
@@ -24,7 +24,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [activeCourse, setActiveCourseState] = useState<string>('Data Structures & Algorithms (CS201)');
+  const [activeCourse, setActiveCourseState] = useState<string>(() => {
+    return localStorage.getItem('sage_active_course') || 'Data Structures & Algorithms (DSA)';
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   const refreshProfile = useCallback(async () => {
@@ -39,7 +41,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const data = await progressService.fetchProfile();
       setProfile(data);
-      if (data.target_topic) {
+      const savedCourse = localStorage.getItem('sage_active_course');
+      if (!savedCourse && data.target_topic) {
         setActiveCourseState(data.target_topic);
       }
     } catch (err: any) {
@@ -131,10 +134,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfile(null);
   };
 
-  const setActiveCourse = async (course: string) => {
+  const setActiveCourse = async (course: string, defaultTopic?: string) => {
+    localStorage.setItem('sage_active_course', course);
     setActiveCourseState(course);
     try {
-      await progressService.updateProfile({ target_topic: course });
+      const topicToSync = defaultTopic || course;
+      await progressService.updateProfile({ target_topic: topicToSync });
       await refreshProfile();
     } catch (err) {
       console.error('Failed to sync course selection to profile:', err);

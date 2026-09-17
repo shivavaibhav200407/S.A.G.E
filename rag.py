@@ -46,11 +46,13 @@ class RAGEngine:
                 reader = PdfReader(pdf_input)
                 file_name = filename
 
-            total_chunks = 0
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=500,
                 chunk_overlap=60
             )
+            documents = []
+            metadatas = []
+            ids = []
 
             for page_idx, page in enumerate(reader.pages):
                 text = page.extract_text()
@@ -60,19 +62,25 @@ class RAGEngine:
                 page_chunks = text_splitter.split_text(text)
                 for c_idx, chunk in enumerate(page_chunks):
                     chunk_id = f"{file_name}_p{page_idx+1}_c{c_idx}_{uuid.uuid4().hex[:6]}"
-                    self.collection.add(
-                        documents=[chunk],
-                        metadatas=[{
-                            "source": f"{file_name} (Page {page_idx+1})",
-                            "doc_name": file_name,
-                            "page": page_idx + 1,
-                            "type": "pdf"
-                        }],
-                        ids=[chunk_id]
-                    )
-                    total_chunks += 1
+                    documents.append(chunk)
+                    metadatas.append({
+                        "source": f"{file_name} (Page {page_idx+1})",
+                        "doc_name": file_name,
+                        "page": page_idx + 1,
+                        "type": "pdf"
+                    })
+                    ids.append(chunk_id)
 
-            return total_chunks
+            if not documents:
+                return 0
+
+            # Batch add all chunks in a single ChromaDB operation for maximum performance (<1s)
+            self.collection.add(
+                documents=documents,
+                metadatas=metadatas,
+                ids=ids
+            )
+            return len(documents)
         except Exception as e:
             print(f"[RAG PDF Ingestion Error]: {e}")
             return 0

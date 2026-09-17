@@ -1,8 +1,16 @@
 import os
+import sys
 import time
 import re
 from dotenv import load_dotenv
 from groq import Groq
+
+# Ensure Windows terminal doesn't crash on Unicode characters from LLM responses
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 load_dotenv()
 
@@ -18,8 +26,8 @@ def get_groq_client():
     return _client
 
 CANDIDATE_MODELS = [
-    "groq/compound-mini",
     "qwen/qwen3.8-27b",
+    "groq/compound-mini",
     "groq/compound"
 ]
 

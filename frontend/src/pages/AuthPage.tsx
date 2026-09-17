@@ -189,12 +189,23 @@ export const AuthPage: React.FC<AuthPageProps> = ({ initialMode = 'login', onBac
                   onChange={(e) => setTargetTopic(e.target.value)}
                   className="w-full bg-slate-900 text-slate-100 text-sm rounded-xl border border-slate-700/80 pl-10 pr-4 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
                 >
-                  <option value="Data Structures & Algorithms">Data Structures & Algorithms</option>
-                  <option value="Object Oriented Programming in Java">Object Oriented Programming in Java</option>
-                  <option value="Database Management Systems">Database Management Systems</option>
-                  <option value="Operating Systems">Operating Systems</option>
-                  <option value="Computer Networks">Computer Networks</option>
-                  <option value="Machine Learning Foundations">Machine Learning Foundations</option>
+                  <option value="Data Structures & Algorithms (DSA)">Data Structures & Algorithms (DSA)</option>
+                  <option value="Operating Systems (OS)">Operating Systems (OS)</option>
+                  <option value="Database Management Systems (DBMS)">Database Management Systems (DBMS)</option>
+                  <option value="Computer Networks (CN)">Computer Networks (CN)</option>
+                  <option value="Java Enterprise & Core Internals">Java Enterprise & Core Internals</option>
+                  <option value="Python Mastery & Advanced Patterns">Python Mastery & Advanced Patterns</option>
+                  <option value="Machine Learning (ML)">Machine Learning (ML)</option>
+                  <option value="Deep Learning & Neural Networks">Deep Learning & Neural Networks</option>
+                  <option value="RAG & Generative AI Systems">RAG & Generative AI Systems</option>
+                  <option value="Digital Logic Design (DLD)">Digital Logic Design (DLD)</option>
+                  <option value="Full-Stack Web Technologies">Full-Stack Web Technologies</option>
+                  <option value="Theory of Computation & Compiler Design">Theory of Computation & Compiler Design</option>
+                  <option value="Thermodynamics & Heat Transfer">Thermodynamics & Heat Transfer</option>
+                  <option value="Strength of Materials (SOM)">Strength of Materials (SOM)</option>
+                  <option value="Basic Electrical & Electronics (BEEE)">Basic Electrical & Electronics (BEEE)</option>
+                  <option value="Engineering Mathematics (Calculus & Linear Algebra)">Engineering Mathematics</option>
+                  <option value="Engineering Physics & Semiconductors">Engineering Physics</option>
                 </select>
               </div>
             </div>

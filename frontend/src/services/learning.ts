@@ -1,16 +1,25 @@
 import { request } from './api';
 
+export interface CourseItem {
+  id: string;
+  name: string;
+  branch?: string;
+  branch_name?: string;
+  category?: string;
+  icon?: string;
+  semester?: string;
+  default_topic?: string;
+  description?: string;
+  prerequisites?: string[];
+  topics?: any;
+  [key: string]: any;
+}
+
 export interface CoursesResponse {
-  courses: Record<string, {
-    name: string;
-    branch?: string;
-    description?: string;
-    prerequisites?: string[];
-    topics?: any;
-    [key: string]: any;
-  }>;
+  courses: Record<string, CourseItem>;
+  courses_list?: CourseItem[];
   tracks: Record<string, any>;
-  branches: Record<string, any>;
+  branches: Array<{ id: string; name: string; icon: string }> | Record<string, any>;
   available_topics?: string[];
   topics?: string[];
 }

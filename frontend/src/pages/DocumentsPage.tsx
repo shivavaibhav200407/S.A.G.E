@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, FileText, Trash2, MessageSquare, Search, Loader2, Database, Zap } from 'lucide-react';
+import { UploadCloud, FileText, Trash2, MessageSquare, Search, Loader2, Database, Zap, Network, BookOpen, Layers, X } from 'lucide-react';
 import type { RAGDocument, SearchResult } from '../types';
 import * as docService from '../services/documents';
 import { useToast } from '../context/ToastContext';
@@ -21,6 +21,10 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ onNavigateToChat, 
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  // Knowledge Graph alignment preview state
+  const [selectedAlignment, setSelectedAlignment] = useState<any>(null);
+  const [aligningDocName, setAligningDocName] = useState<string | null>(null);
 
   // Semantic search test states
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -64,12 +68,29 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ onNavigateToChat, 
       const res = await docService.uploadDocumentFile(file);
       showToast(res.message || `Successfully indexed ${res.chunks_ingested} chunks!`, 'success');
       await loadDocuments();
+      if (res.chunks_ingested > 0 && (res as any).alignment) {
+        setSelectedAlignment((res as any).alignment);
+      }
     } catch (err: any) {
       showToast(err.message || 'PDF upload or processing failed.', 'error');
     } finally {
       setUploading(false);
       setUploadProgressText('');
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleOpenDiagnosticAlignment = async (docName: string) => {
+    setAligningDocName(docName);
+    try {
+      const alignment = await docService.alignDocumentWithKnowledgeGraph(docName);
+      setSelectedAlignment(alignment);
+    } catch (err: any) {
+      if (onNavigateToQuiz) {
+        onNavigateToQuiz(undefined, 'diagnostic', docName);
+      }
+    } finally {
+      setAligningDocName(null);
     }
   };
 
@@ -261,14 +282,11 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ onNavigateToChat, 
                     size="sm"
                     variant="primary"
                     className="w-full text-xs justify-center"
-                    onClick={() => {
-                      if (onNavigateToQuiz) {
-                        onNavigateToQuiz(undefined, 'diagnostic', doc.name);
-                      }
-                    }}
+                    loading={aligningDocName === doc.name}
+                    onClick={() => handleOpenDiagnosticAlignment(doc.name)}
                     icon={<Zap className="w-3.5 h-3.5 text-amber-300" />}
                   >
-                    Diagnose from Document
+                    Diagnose & Align to KG
                   </Button>
                   <Button
                     size="sm"
@@ -331,6 +349,112 @@ export const DocumentsPage: React.FC<DocumentsPageProps> = ({ onNavigateToChat, 
           </div>
         )}
       </Card>
+
+      {/* Knowledge Graph Semantic Alignment Preview Modal */}
+      {selectedAlignment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <Card className="max-w-lg w-full p-6 space-y-5 border-indigo-500/40 bg-slate-950/95 shadow-2xl relative">
+            <button
+              onClick={() => setSelectedAlignment(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-xs font-mono">
+                <Network className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Knowledge Graph Semantic Alignment</span>
+              </div>
+              <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <FileText className="w-5 h-5 text-cyan-400 shrink-0" />
+                <span className="truncate">{selectedAlignment.doc_name}</span>
+              </h2>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Target Knowledge Domain</span>
+                <Badge variant="accent" size="sm" className="font-mono">
+                  {selectedAlignment.domain_title || selectedAlignment.domain?.toUpperCase()}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">Indexed ChromaDB Chunks</span>
+                <span className="font-mono text-cyan-400 font-semibold">{selectedAlignment.total_chunks} chunks</span>
+              </div>
+            </div>
+
+            {selectedAlignment.aligned_topics && selectedAlignment.aligned_topics.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-indigo-400" />
+                  Aligned Curriculum Modules
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAlignment.aligned_topics.map((t: string, i: number) => (
+                    <span
+                      key={i}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-xs font-medium"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedAlignment.prerequisites && selectedAlignment.prerequisites.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-amber-400" />
+                  Prerequisite Competencies Analyzed
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAlignment.prerequisites.map((p: string, i: number) => (
+                    <span
+                      key={i}
+                      className="px-2.5 py-1 rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs font-mono"
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row gap-2">
+              <Button
+                variant="primary"
+                className="flex-1 justify-center text-xs"
+                onClick={() => {
+                  const targetTopic = selectedAlignment.aligned_topics?.[0] || undefined;
+                  const dName = selectedAlignment.doc_name;
+                  setSelectedAlignment(null);
+                  if (onNavigateToQuiz) {
+                    onNavigateToQuiz(targetTopic, 'diagnostic', dName);
+                  }
+                }}
+                icon={<Zap className="w-3.5 h-3.5 text-amber-300" />}
+              >
+                Launch Grounded Diagnostic Quiz
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-xs text-slate-300 hover:text-white"
+                onClick={() => {
+                  const dName = selectedAlignment.doc_name;
+                  setSelectedAlignment(null);
+                  onNavigateToChat(`Based on my uploaded document "${dName}", explain the primary concept of ${selectedAlignment.aligned_topics?.[0] || 'the text'} and show an illustrative example.`);
+                }}
+                icon={<MessageSquare className="w-3.5 h-3.5 text-indigo-400" />}
+              >
+                Discuss in Chat
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

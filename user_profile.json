@@ -9,7 +9,9 @@
         "LLM Evaluation Metrics",
         "Evaluation, Guardrails & Self-Correction",
         "Java Basics & Primitive Types",
-        "Exceptions & Try-With-Resources"
+        "Exceptions & Try-With-Resources",
+        "Distinction between Deadlock Prevention and Avoidance",
+        "Banker's Algorithm Safe State Calculation"
     ],
     "completed_modules": [
         "Python Basics & Syntax",
